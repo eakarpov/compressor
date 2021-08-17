@@ -1,22 +1,61 @@
 // Modules to control application life and create native browser window
-const {app, BrowserWindow} = require('electron')
-const path = require('path')
+const {app, dialog, ipcMain, BrowserWindow} = require('electron')
+const path = require('path');
+const sharp = require("sharp");
+const fs = require('fs');
 
 function createWindow () {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 400,
+    height: 300,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: true,
+      contextIsolation: false,
     }
   })
 
   // and load the index.html of the app.
-  mainWindow.loadFile('index.html')
+  mainWindow.loadFile('index.html');
 
   // Open the DevTools.
   // mainWindow.webContents.openDevTools()
+}
+
+ipcMain.on("button-clicked", async (event, value) => {
+  const res = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  const directory = res.filePaths[0];
+  if (directory) {
+    event.reply("directory-picked");
+  }
+  await compressImages(directory, value);
+  app.quit();
+});
+
+async function readFiles(dirname, quality) {
+  const files = fs.readdirSync(dirname);
+  console.log(dirname);
+  for await (const file of files) {
+    if (!fs.lstatSync(path.join(dirname, file)).isDirectory()) {
+      const f = fs.readFileSync(path.join(dirname, file));
+      const resF = await sharp(f).jpeg({ mozjpeg: true, quality }).toBuffer();
+      console.log(resF);
+      const [filename, ext] = file.split('.');
+      fs.writeFileSync(path.join(dirname, "result", [filename, "jpg"].join('.')), resF);
+    }
+  }
+}
+
+
+async function compressImages(directory, quality) {
+  if (fs.existsSync(path.join(directory, "result"))) {
+    fs.rmdirSync(path.join(directory, "result"), {recursive: true });
+    fs.mkdirSync(path.join(directory, "result"));
+  } else {
+    fs.mkdirSync(path.join(directory, "result"));
+  }
+  await readFiles(directory, quality);
 }
 
 // This method will be called when Electron has finished
